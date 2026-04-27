@@ -1,0 +1,6 @@
+services:
+  narjo-bug-bot:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    # No ports needed — Discord bots are outbound-only
