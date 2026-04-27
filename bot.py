@@ -73,6 +73,7 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 STATUS_KEYS = {"unresolved", "needs_info", "fixed", "wont_fix"}
+PINNED_THREAD_PREFIX = "📌 How to Submit a "
 
 OP_MESSAGES = {
     "fixed":      "Your bug report has been marked as **Fixed**. 🎉 Thanks for the report!",
@@ -195,6 +196,9 @@ class StatusPanel(discord.ui.View):
         new_tags = kept_tags + ([new_tag_obj] if new_tag_obj else [])
         await thread.edit(applied_tags=new_tags)
 
+        if status_key == "unresolved" and (thread.archived or thread.locked):
+            await thread.edit(archived=False, locked=False)
+
         label = STATUS_LABELS.get(status_key, status_key.title())
         op = await get_reporter(thread)
         embed = build_status_embed(label, status_key, interaction.user, op)
@@ -203,6 +207,9 @@ class StatusPanel(discord.ui.View):
         op_msg = OP_MESSAGES.get(status_key, f"Your report status changed to **{label}**.")
         if op:
             await thread.send(f"{op.mention} — {op_msg}")
+
+        if status_key == "fixed":
+            await thread.edit(archived=True, locked=True)
 
     async def _mod_set_status(self, interaction: discord.Interaction, status_key: str):
         if not self._is_mod(interaction):
@@ -349,6 +356,21 @@ async def on_thread_create(thread: discord.Thread):
 
     await thread.send(embed=build_initial_status_embed(thread.owner), view=StatusPanel())
 
+@bot.event
+async def on_message(message: discord.Message):
+    if message.author.bot:
+        return
+
+    channel = message.channel
+    if isinstance(channel, discord.Thread) and isinstance(channel.parent, discord.ForumChannel):
+        if channel.owner_id == bot.user.id and channel.name.startswith(PINNED_THREAD_PREFIX):
+            try:
+                await message.delete()
+            except (discord.Forbidden, discord.HTTPException):
+                pass
+
+    await bot.process_commands(message)
+
 
 # ── Slash commands ────────────────────────────────────────────────────────────
 @bot.tree.command(name="bugreport", description="Submit a bug report for this channel's app")
@@ -467,7 +489,7 @@ async def pinbugreport(ctx: commands.Context):
 
     # Create the pinned thread — name starts with 📌 so it stands out
     thread, message = await forum.create_thread(
-        name=f"📌 How to Submit a {app_name} Bug Report",
+        name=f"{PINNED_THREAD_PREFIX}{app_name} Bug Report",
         embed=embed,
     )
 
