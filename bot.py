@@ -760,7 +760,7 @@ async def pinbugreport(ctx: commands.Context):
     embed = discord.Embed(
         title=f"📌 How to Submit a {app_name} Bug Report",
         description=(
-            f"Found a bug in {app_name}? Use the `/bugreport` command right here in this channel "
+            f"Found a bug in Narjo? Use the `/bugreport` command right here in this channel "
             "to submit a structured report. It takes about a minute and helps maintainers "
             "reproduce and fix issues faster."
         ),
