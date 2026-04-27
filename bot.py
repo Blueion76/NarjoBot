@@ -14,23 +14,47 @@ MOD_ROLE_ID = int(os.getenv("MOD_ROLE_ID", 0))
 # Universal platform hint for all apps
 PLATFORM_HINT = os.getenv("PLATFORM_HINT", "Narjo 1.3(70) - iOS 26.4")
 
-# Per-app forum channel IDs
+# Per-app forum channel IDs + per-app status tag IDs
 APPS = {
     "Navidrome": {
         "forum_id":      int(os.getenv("FORUM_NAVIDROME_ID", 0)),
         "color":         discord.Color.from_str("#FF8200"),
+        "tags": {
+            "unresolved": int(os.getenv("NAVIDROME_TAG_UNRESOLVED", 0)),
+            "needs_info": int(os.getenv("NAVIDROME_TAG_NEEDS_INFO", 0)),
+            "fixed":      int(os.getenv("NAVIDROME_TAG_FIXED", 0)),
+            "wont_fix":   int(os.getenv("NAVIDROME_TAG_WONT_FIX", 0)),
+        },
     },
     "Plex": {
         "forum_id":      int(os.getenv("FORUM_PLEX_ID", 0)),
         "color":         discord.Color.from_str("#E5A00D"),
+        "tags": {
+            "unresolved": int(os.getenv("PLEX_TAG_UNRESOLVED", 0)),
+            "needs_info": int(os.getenv("PLEX_TAG_NEEDS_INFO", 0)),
+            "fixed":      int(os.getenv("PLEX_TAG_FIXED", 0)),
+            "wont_fix":   int(os.getenv("PLEX_TAG_WONT_FIX", 0)),
+        },
     },
     "Jellyfin": {
         "forum_id":      int(os.getenv("FORUM_JELLYFIN_ID", 0)),
         "color":         discord.Color.from_str("#00A4DC"),
+        "tags": {
+            "unresolved": int(os.getenv("JELLYFIN_TAG_UNRESOLVED", 0)),
+            "needs_info": int(os.getenv("JELLYFIN_TAG_NEEDS_INFO", 0)),
+            "fixed":      int(os.getenv("JELLYFIN_TAG_FIXED", 0)),
+            "wont_fix":   int(os.getenv("JELLYFIN_TAG_WONT_FIX", 0)),
+        },
     },
     "Emby": {
         "forum_id":      int(os.getenv("FORUM_EMBY_ID", 0)),
         "color":         discord.Color.from_str("#52B54B"),
+        "tags": {
+            "unresolved": int(os.getenv("EMBY_TAG_UNRESOLVED", 0)),
+            "needs_info": int(os.getenv("EMBY_TAG_NEEDS_INFO", 0)),
+            "fixed":      int(os.getenv("EMBY_TAG_FIXED", 0)),
+            "wont_fix":   int(os.getenv("EMBY_TAG_WONT_FIX", 0)),
+        },
     },
 }
 
@@ -40,14 +64,6 @@ FORUM_TO_APP = {cfg["forum_id"]: name for name, cfg in APPS.items() if cfg["foru
 # All forum IDs the bot should watch
 ALL_FORUM_IDS = set(FORUM_TO_APP.keys())
 
-# Status tag IDs
-TAG_UNRESOLVED = int(os.getenv("TAG_UNRESOLVED", 0))
-TAG_NEEDS_INFO = int(os.getenv("TAG_NEEDS_INFO", 0))
-TAG_FIXED      = int(os.getenv("TAG_FIXED",      0))
-TAG_WONT_FIX   = int(os.getenv("TAG_WONT_FIX",   0))
-
-STATUS_TAG_IDS = {TAG_UNRESOLVED, TAG_NEEDS_INFO, TAG_FIXED, TAG_WONT_FIX}
-
 # ── Bot setup ─────────────────────────────────────────────────────────────────
 intents = discord.Intents.default()
 intents.message_content = True
@@ -56,36 +72,59 @@ intents.members = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
-def status_color(tag_id: int) -> discord.Color:
-    return {
-        TAG_FIXED:      discord.Color.green(),
-        TAG_NEEDS_INFO: discord.Color.yellow(),
-        TAG_WONT_FIX:   discord.Color.red(),
-        TAG_UNRESOLVED: discord.Color.light_grey(),
-    }.get(tag_id, discord.Color.blurple())
-
-def status_emoji(tag_id: int) -> str:
-    return {
-        TAG_FIXED:      "🟢",
-        TAG_NEEDS_INFO: "🟡",
-        TAG_WONT_FIX:   "⛔",
-        TAG_UNRESOLVED: "🔴",
-    }.get(tag_id, "❓")
+STATUS_KEYS = {"unresolved", "needs_info", "fixed", "wont_fix"}
 
 OP_MESSAGES = {
-    TAG_FIXED:      "Your bug report has been marked as **Fixed**. 🎉 Thanks for the report!",
-    TAG_NEEDS_INFO: "Your bug report needs more information. A maintainer has questions — please reply with additional details.",
-    TAG_WONT_FIX:   "Your bug report has been marked as **Won't Fix**. This issue won't be addressed at this time.",
-    TAG_UNRESOLVED: "Your bug report has been **reopened** and marked as Unresolved.",
+    "fixed":      "Your bug report has been marked as **Fixed**. 🎉 Thanks for the report!",
+    "needs_info": "Your bug report needs more information. A maintainer has questions — please reply with additional details.",
+    "wont_fix":   "Your bug report has been marked as **Won't Fix**. This issue won't be addressed at this time.",
+    "unresolved": "Your bug report has been **reopened** and marked as Unresolved.",
 }
 
-def build_status_embed(label: str, tag_id: int, actor: discord.Member, op: discord.Member | None) -> discord.Embed:
+STATUS_LABELS = {
+    "fixed": "Fixed",
+    "needs_info": "Needs Info",
+    "wont_fix": "Won't Fix",
+    "unresolved": "Unresolved",
+}
+
+def status_color(status_key: str) -> discord.Color:
+    return {
+        "fixed":      discord.Color.green(),
+        "needs_info": discord.Color.yellow(),
+        "wont_fix":   discord.Color.red(),
+        "unresolved": discord.Color.light_grey(),
+    }.get(status_key, discord.Color.blurple())
+
+def status_emoji(status_key: str) -> str:
+    return {
+        "fixed":      "🟢",
+        "needs_info": "🟡",
+        "wont_fix":   "⛔",
+        "unresolved": "🔴",
+    }.get(status_key, "❓")
+
+def get_app_cfg_for_thread(thread: discord.Thread) -> dict | None:
+    if not thread or not thread.parent_id:
+        return None
+    app_name = FORUM_TO_APP.get(thread.parent_id)
+    if not app_name:
+        return None
+    return APPS.get(app_name)
+
+def get_status_tag_ids_for_thread(thread: discord.Thread) -> set[int]:
+    cfg = get_app_cfg_for_thread(thread)
+    if not cfg:
+        return set()
+    return {cfg["tags"][k] for k in STATUS_KEYS if cfg["tags"].get(k)}
+
+def build_status_embed(label: str, status_key: str, actor: discord.Member, op: discord.Member | None) -> discord.Embed:
     embed = discord.Embed(
         title="🐛 Bug Report Status",
         description=f"Status updated to **{label}** by {actor.mention}",
-        color=status_color(tag_id),
+        color=status_color(status_key),
     )
-    embed.add_field(name="Status",       value=f"{status_emoji(tag_id)} {label}", inline=True)
+    embed.add_field(name="Status",       value=f"{status_emoji(status_key)} {label}", inline=True)
     embed.add_field(name="Submitted by", value=op.mention if op else "Unknown",   inline=True)
     embed.set_footer(text="Mods: Fixed / Needs Info / Won't Fix  ·  Anyone: Reopen")
     return embed
@@ -136,47 +175,56 @@ class StatusPanel(discord.ui.View):
         role = interaction.guild.get_role(MOD_ROLE_ID)
         return role in interaction.user.roles if role else False
 
-    async def _set_status(self, interaction: discord.Interaction, new_tag_id: int, label: str):
+    async def _set_status(self, interaction: discord.Interaction, status_key: str):
         thread = interaction.channel
         if not isinstance(thread, discord.Thread):
             await interaction.response.send_message("❌ This button only works inside a forum thread.", ephemeral=True)
             return
 
-        forum       = thread.parent
-        new_tag_obj = discord.utils.get(forum.available_tags, id=new_tag_id)
-        kept_tags   = [t for t in thread.applied_tags if t.id not in STATUS_TAG_IDS]
-        new_tags    = kept_tags + ([new_tag_obj] if new_tag_obj else [])
+        cfg = get_app_cfg_for_thread(thread)
+        if not cfg:
+            await interaction.response.send_message("❌ This thread isn't in a configured forum.", ephemeral=True)
+            return
+
+        forum = thread.parent
+        new_tag_id = cfg["tags"].get(status_key, 0)
+        new_tag_obj = discord.utils.get(forum.available_tags, id=new_tag_id) if new_tag_id else None
+
+        status_tag_ids = get_status_tag_ids_for_thread(thread)
+        kept_tags = [t for t in thread.applied_tags if t.id not in status_tag_ids]
+        new_tags = kept_tags + ([new_tag_obj] if new_tag_obj else [])
         await thread.edit(applied_tags=new_tags)
 
+        label = STATUS_LABELS.get(status_key, status_key.title())
         op = await get_reporter(thread)
-        embed = build_status_embed(label, new_tag_id, interaction.user, op)
+        embed = build_status_embed(label, status_key, interaction.user, op)
         await interaction.response.edit_message(embed=embed, view=self)
 
-        op_msg = OP_MESSAGES.get(new_tag_id, f"Your report status changed to **{label}**.")
+        op_msg = OP_MESSAGES.get(status_key, f"Your report status changed to **{label}**.")
         if op:
             await thread.send(f"{op.mention} — {op_msg}")
 
-    async def _mod_set_status(self, interaction: discord.Interaction, new_tag_id: int, label: str):
+    async def _mod_set_status(self, interaction: discord.Interaction, status_key: str):
         if not self._is_mod(interaction):
             await interaction.response.send_message("❌ Only moderators can use this button.", ephemeral=True)
             return
-        await self._set_status(interaction, new_tag_id, label)
+        await self._set_status(interaction, status_key)
 
     @discord.ui.button(label="✅ Fixed",      style=discord.ButtonStyle.success,   custom_id="narjo_status_fixed")
     async def btn_fixed(self, interaction: discord.Interaction, _: discord.ui.Button):
-        await self._mod_set_status(interaction, TAG_FIXED, "Fixed")
+        await self._mod_set_status(interaction, "fixed")
 
     @discord.ui.button(label="💬 Needs Info", style=discord.ButtonStyle.primary,   custom_id="narjo_status_needs_info")
     async def btn_needs_info(self, interaction: discord.Interaction, _: discord.ui.Button):
-        await self._mod_set_status(interaction, TAG_NEEDS_INFO, "Needs Info")
+        await self._mod_set_status(interaction, "needs_info")
 
     @discord.ui.button(label="⛔ Won't Fix",  style=discord.ButtonStyle.danger,    custom_id="narjo_status_wont_fix")
     async def btn_wont_fix(self, interaction: discord.Interaction, _: discord.ui.Button):
-        await self._mod_set_status(interaction, TAG_WONT_FIX, "Won't Fix")
+        await self._mod_set_status(interaction, "wont_fix")
 
     @discord.ui.button(label="🔁 Reopen",     style=discord.ButtonStyle.secondary, custom_id="narjo_status_reopen")
     async def btn_reopen(self, interaction: discord.Interaction, _: discord.ui.Button):
-        await self._set_status(interaction, TAG_UNRESOLVED, "Unresolved")
+        await self._set_status(interaction, "unresolved")
 
 
 # ── Bug report modal ──────────────────────────────────────────────────────────
@@ -248,8 +296,9 @@ class BugReportModal(discord.ui.Modal):
             report_embed.add_field(name="📄 Debug Logs", value=f"```\n{self.debug_logs.value[:900]}\n```", inline=False)
         report_embed.set_footer(text=f"Submitted via /bugreport · {self.app_name} · Reporter ID: {interaction.user.id}")
 
-        unresolved_tag = discord.utils.get(forum.available_tags, id=TAG_UNRESOLVED)
-        initial_tags   = [unresolved_tag] if unresolved_tag else []
+        unresolved_tag_id = cfg["tags"].get("unresolved", 0)
+        unresolved_tag = discord.utils.get(forum.available_tags, id=unresolved_tag_id) if unresolved_tag_id else None
+        initial_tags = [unresolved_tag] if unresolved_tag else []
 
         thread, _ = await forum.create_thread(
             name=self.summary.value,
@@ -286,8 +335,13 @@ async def on_thread_create(thread: discord.Thread):
     if thread.owner_id == bot.user.id:
         return  # already handled by /bugreport submission
 
+    cfg = get_app_cfg_for_thread(thread)
+    if not cfg:
+        return
+
     forum = thread.parent
-    unresolved_tag = discord.utils.get(forum.available_tags, id=TAG_UNRESOLVED)
+    unresolved_tag_id = cfg["tags"].get("unresolved", 0)
+    unresolved_tag = discord.utils.get(forum.available_tags, id=unresolved_tag_id) if unresolved_tag_id else None
     if unresolved_tag:
         current_tags = list(thread.applied_tags)
         if unresolved_tag not in current_tags:
@@ -440,15 +494,13 @@ async def listtags(ctx: commands.Context):
 async def bugstatus(ctx: commands.Context):
     forum_lines = "\n".join(f"  **{k}:** `{v['forum_id']}`" for k, v in APPS.items())
     tag_lines = "\n".join([
-        f"  TAG_UNRESOLVED: `{TAG_UNRESOLVED}`",
-        f"  TAG_NEEDS_INFO: `{TAG_NEEDS_INFO}`",
-        f"  TAG_FIXED:      `{TAG_FIXED}`",
-        f"  TAG_WONT_FIX:   `{TAG_WONT_FIX}`",
+        f"  {app}: unresolved={cfg['tags'].get('unresolved', 0)} needs_info={cfg['tags'].get('needs_info', 0)} fixed={cfg['tags'].get('fixed', 0)} wont_fix={cfg['tags'].get('wont_fix', 0)}"
+        for app, cfg in APPS.items()
     ])
     await ctx.send(
         f"**Forum channels:**\n{forum_lines}\n\n"
         f"**Mod role:** <@&{MOD_ROLE_ID}>\n\n"
-        f"**Status tags:**\n{tag_lines}"
+        f"**Status tags (per app):**\n{tag_lines}"
     )
 
 
