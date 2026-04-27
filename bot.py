@@ -585,7 +585,10 @@ class FeatureRequestModal(discord.ui.Modal, title="Submit a Feature Request"):
 async def on_ready():
     bot.add_view(StatusPanel())
     bot.add_view(FeatureRequestStatusPanel())
-    await bot.tree.sync()
+    # Sync to all guilds the bot is in for instant command availability
+    for guild in bot.guilds:
+        bot.tree.copy_global_to(guild=guild)
+        await bot.tree.sync(guild=guild)
     print(f"✅ Narjo Bot online as {bot.user} (ID: {bot.user.id})")
     print(f"   Watching bug forums: {ALL_FORUM_IDS}")
     print(f"   Feature request forum: {FEATURE_REQUEST_FORUM_ID}")
@@ -698,11 +701,9 @@ async def bugreport(interaction: discord.Interaction, category: app_commands.Cho
 )
 async def request(interaction: discord.Interaction, category: app_commands.Choice[str] | None = None):
     try:
-        # Step 1: check the raw channel ID (works when used directly in the forum channel)
         lookup_id = interaction.channel_id
 
         if lookup_id != FEATURE_REQUEST_FORUM_ID:
-            # Step 2: check parent_id (works when used inside a thread within the forum)
             channel   = interaction.channel
             parent_id = getattr(channel, "parent_id", None)
             if parent_id:
