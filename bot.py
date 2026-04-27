@@ -31,8 +31,6 @@ CATEGORY_TAG_NAMES = {
 }
 
 # ── Feature request tag names ─────────────────────────────────────────────────
-# Status tag names are resolved by name at runtime via find_tag_by_name,
-# consistent with how bug report tags are resolved.
 REQUEST_STATUS_TAG_NAMES = {
     "open":        os.getenv("TAG_NAME_REQ_OPEN", "Open"),
     "planned":     os.getenv("TAG_NAME_REQ_PLANNED", "Planned"),
@@ -552,7 +550,6 @@ class FeatureRequestModal(discord.ui.Modal, title="Submit a Feature Request"):
             report_embed.add_field(name="📎 Extra Context", value=self.extra.value, inline=False)
         report_embed.set_footer(text=f"Submitted via /request · Reporter ID: {interaction.user.id}")
 
-        # Resolve tags by name at runtime — same pattern as bug report tag resolution
         open_tag     = find_tag_by_name(forum, REQUEST_STATUS_TAG_NAMES["open"])
         cat_tag_name = REQUEST_CATEGORY_TAG_NAMES.get(self.category_tag_key) if self.category_tag_key else None
         category_tag = find_tag_by_name(forum, cat_tag_name) if cat_tag_name else None
@@ -701,20 +698,19 @@ async def bugreport(interaction: discord.Interaction, category: app_commands.Cho
 )
 async def request(interaction: discord.Interaction, category: app_commands.Choice[str] | None = None):
     try:
+        # Step 1: check the raw channel ID (works when used directly in the forum channel)
         lookup_id = interaction.channel_id
-        channel   = interaction.channel
-        parent_id = getattr(channel, "parent_id", None)
-        if parent_id:
-            lookup_id = parent_id
 
         if lookup_id != FEATURE_REQUEST_FORUM_ID:
-            if not parent_id:
-                try:
-                    fetched   = await interaction.guild.fetch_channel(interaction.channel_id)
-                    parent_id = getattr(fetched, "parent_id", None)
-                    lookup_id = parent_id if parent_id else interaction.channel_id
-                except Exception:
-                    pass
+            # Step 2: check parent_id (works when used inside a thread within the forum)
+            channel   = interaction.channel
+            parent_id = getattr(channel, "parent_id", None)
+            if parent_id:
+                lookup_id = parent_id
+            else:
+                fetched   = await interaction.guild.fetch_channel(interaction.channel_id)
+                parent_id = getattr(fetched, "parent_id", None)
+                lookup_id = parent_id if parent_id else interaction.channel_id
 
         if lookup_id != FEATURE_REQUEST_FORUM_ID:
             channel_mention = f"<#{FEATURE_REQUEST_FORUM_ID}>" if FEATURE_REQUEST_FORUM_ID else "the #feature-request channel"
