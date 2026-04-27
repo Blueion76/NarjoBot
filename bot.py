@@ -25,6 +25,10 @@ APPS = {
             "fixed":      int(os.getenv("NAVIDROME_TAG_FIXED", 0)),
             "wont_fix":   int(os.getenv("NAVIDROME_TAG_WONT_FIX", 0)),
             "other":      int(os.getenv("NAVIDROME_TAG_OTHER", 0)),
+            "ui":         int(os.getenv("NAVIDROME_TAG_UI", 0)),
+            "sync":       int(os.getenv("NAVIDROME_TAG_SYNC", 0)),
+            "performance": int(os.getenv("NAVIDROME_TAG_PERFORMANCE", 0)),
+            "auth":       int(os.getenv("NAVIDROME_TAG_AUTH", 0)),
         },
     },
     "Plex": {
@@ -36,6 +40,10 @@ APPS = {
             "fixed":      int(os.getenv("PLEX_TAG_FIXED", 0)),
             "wont_fix":   int(os.getenv("PLEX_TAG_WONT_FIX", 0)),
             "other":      int(os.getenv("PLEX_TAG_OTHER", 0)),
+            "ui":         int(os.getenv("PLEX_TAG_UI", 0)),
+            "sync":       int(os.getenv("PLEX_TAG_SYNC", 0)),
+            "performance": int(os.getenv("PLEX_TAG_PERFORMANCE", 0)),
+            "auth":       int(os.getenv("PLEX_TAG_AUTH", 0)),
         },
     },
     "Jellyfin": {
@@ -47,6 +55,10 @@ APPS = {
             "fixed":      int(os.getenv("JELLYFIN_TAG_FIXED", 0)),
             "wont_fix":   int(os.getenv("JELLYFIN_TAG_WONT_FIX", 0)),
             "other":      int(os.getenv("JELLYFIN_TAG_OTHER", 0)),
+            "ui":         int(os.getenv("JELLYFIN_TAG_UI", 0)),
+            "sync":       int(os.getenv("JELLYFIN_TAG_SYNC", 0)),
+            "performance": int(os.getenv("JELLYFIN_TAG_PERFORMANCE", 0)),
+            "auth":       int(os.getenv("JELLYFIN_TAG_AUTH", 0)),
         },
     },
     "Emby": {
@@ -58,6 +70,10 @@ APPS = {
             "fixed":      int(os.getenv("EMBY_TAG_FIXED", 0)),
             "wont_fix":   int(os.getenv("EMBY_TAG_WONT_FIX", 0)),
             "other":      int(os.getenv("EMBY_TAG_OTHER", 0)),
+            "ui":         int(os.getenv("EMBY_TAG_UI", 0)),
+            "sync":       int(os.getenv("EMBY_TAG_SYNC", 0)),
+            "performance": int(os.getenv("EMBY_TAG_PERFORMANCE", 0)),
+            "auth":       int(os.getenv("EMBY_TAG_AUTH", 0)),
         },
     },
 }
@@ -78,6 +94,14 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 # ── Helpers ───────────────────────────────────────────────────────────────────
 STATUS_KEYS = {"unresolved", "needs_info", "fixed", "wont_fix"}
 PINNED_THREAD_PREFIX = "📌 How to Submit a "
+
+CATEGORY_CHOICES = {
+    "other": "Other",
+    "ui": "UI",
+    "sync": "Sync / Library",
+    "performance": "Performance",
+    "auth": "Auth",
+}
 
 OP_MESSAGES = {
     "fixed":      "Your bug report has been marked as **Fixed**. 🎉 Thanks for the report!",
@@ -240,11 +264,11 @@ class StatusPanel(discord.ui.View):
 
 # ── Bug report modal ──────────────────────────────────────────────────────────
 class BugReportModal(discord.ui.Modal):
-    def __init__(self, app_name: str, forum_channel_id: int, platform_hint: str, other_tag_id: int):
+    def __init__(self, app_name: str, forum_channel_id: int, platform_hint: str, category_tag_id: int):
         super().__init__(title=f"Report a {app_name} Bug")
         self.app_name         = app_name
         self.forum_channel_id = forum_channel_id
-        self.other_tag_id     = other_tag_id
+        self.category_tag_id  = category_tag_id
 
         self.summary = discord.ui.TextInput(
             label="Summary",
@@ -310,9 +334,9 @@ class BugReportModal(discord.ui.Modal):
 
         unresolved_tag_id = cfg["tags"].get("unresolved", 0)
         unresolved_tag = discord.utils.get(forum.available_tags, id=unresolved_tag_id) if unresolved_tag_id else None
-        other_tag = discord.utils.get(forum.available_tags, id=self.other_tag_id) if self.other_tag_id else None
+        category_tag = discord.utils.get(forum.available_tags, id=self.category_tag_id) if self.category_tag_id else None
 
-        initial_tags = [t for t in (unresolved_tag, other_tag) if t]
+        initial_tags = [t for t in (unresolved_tag, category_tag) if t]
 
         thread, _ = await forum.create_thread(
             name=self.summary.value,
@@ -382,11 +406,15 @@ async def on_message(message: discord.Message):
 # ── Slash commands ────────────────────────────────────────────────────────────
 @bot.tree.command(name="bugreport", description="Submit a bug report for this channel's app")
 @app_commands.choices(
-    tag=[
+    category=[
         app_commands.Choice(name="Other", value="other"),
+        app_commands.Choice(name="UI", value="ui"),
+        app_commands.Choice(name="Sync / Library", value="sync"),
+        app_commands.Choice(name="Performance", value="performance"),
+        app_commands.Choice(name="Auth", value="auth"),
     ]
 )
-async def bugreport(interaction: discord.Interaction, tag: app_commands.Choice[str] | None = None):
+async def bugreport(interaction: discord.Interaction, category: app_commands.Choice[str] | None = None):
     try:
         # Resolve which forum channel this interaction belongs to.
         # Try in order: direct match → thread parent_id attr → guild thread fetch.
@@ -417,13 +445,14 @@ async def bugreport(interaction: discord.Interaction, tag: app_commands.Choice[s
             return
 
         cfg = APPS[app_name]
-        other_tag_id = cfg["tags"].get("other", 0) if tag and tag.value == "other" else 0
+        category_key = category.value if category else None
+        category_tag_id = cfg["tags"].get(category_key, 0) if category_key else 0
         await interaction.response.send_modal(
             BugReportModal(
                 app_name=app_name,
                 forum_channel_id=cfg["forum_id"],
                 platform_hint=PLATFORM_HINT,
-                other_tag_id=other_tag_id,
+                category_tag_id=category_tag_id,
             )
         )
     except Exception as e:
@@ -495,7 +524,11 @@ async def pinbugreport(ctx: commands.Context):
             "🟡 **Needs Info** — maintainer has questions, check your thread\n"
             "🟢 **Fixed** — resolved in a recent update\n"
             "⛔ **Won't Fix** — out of scope or can't reproduce\n"
-            "🏷️ **Other** — miscellaneous or uncategorized bug\n\n"
+            "🏷️ **Other** — miscellaneous or uncategorized bug\n"
+            "🧭 **UI** — interface or layout issues\n"
+            "🔁 **Sync / Library** — sync, metadata, or library scans\n"
+            "⚡ **Performance** — slowdowns, stalls, high resource usage\n"
+            "🔐 **Auth** — login, permissions, or token issues\n\n"
             "🔁 You can **Reopen** a closed report if the bug comes back."
         ),
         inline=False,
@@ -531,7 +564,7 @@ async def listtags(ctx: commands.Context):
 async def bugstatus(ctx: commands.Context):
     forum_lines = "\n".join(f"  **{k}:** `{v['forum_id']}`" for k, v in APPS.items())
     tag_lines = "\n".join([
-        f"  {app}: unresolved={cfg['tags'].get('unresolved', 0)} needs_info={cfg['tags'].get('needs_info', 0)} fixed={cfg['tags'].get('fixed', 0)} wont_fix={cfg['tags'].get('wont_fix', 0)} other={cfg['tags'].get('other', 0)}"
+        f"  {app}: unresolved={cfg['tags'].get('unresolved', 0)} needs_info={cfg['tags'].get('needs_info', 0)} fixed={cfg['tags'].get('fixed', 0)} wont_fix={cfg['tags'].get('wont_fix', 0)} other={cfg['tags'].get('other', 0)} ui={cfg['tags'].get('ui', 0)} sync={cfg['tags'].get('sync', 0)} performance={cfg['tags'].get('performance', 0)} auth={cfg['tags'].get('auth', 0)}"
         for app, cfg in APPS.items()
     ])
     await ctx.send(
