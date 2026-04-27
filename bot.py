@@ -14,67 +14,39 @@ MOD_ROLE_ID = int(os.getenv("MOD_ROLE_ID", 0))
 # Universal platform hint for all apps
 PLATFORM_HINT = os.getenv("PLATFORM_HINT", "Narjo 1.3(70) - iOS 26.4")
 
-# Per-app forum channel IDs + per-app status tag IDs
+# Tag names (shared across forums)
+STATUS_TAG_NAMES = {
+    "unresolved": os.getenv("TAG_NAME_UNRESOLVED", "Unresolved"),
+    "needs_info": os.getenv("TAG_NAME_NEEDS_INFO", "Needs Info"),
+    "fixed":      os.getenv("TAG_NAME_FIXED", "Fixed"),
+    "wont_fix":   os.getenv("TAG_NAME_WONT_FIX", "Won't Fix"),
+}
+
+CATEGORY_TAG_NAMES = {
+    "other": os.getenv("TAG_NAME_OTHER", "Other"),
+    "ui": os.getenv("TAG_NAME_UI", "UI"),
+    "sync": os.getenv("TAG_NAME_SYNC", "Sync / Library"),
+    "performance": os.getenv("TAG_NAME_PERFORMANCE", "Performance"),
+    "auth": os.getenv("TAG_NAME_AUTH", "Auth"),
+}
+
+# Per-app forum channel IDs
 APPS = {
     "Navidrome": {
         "forum_id":      int(os.getenv("FORUM_NAVIDROME_ID", 0)),
         "color":         discord.Color.from_str("#FF8200"),
-        "tags": {
-            "unresolved": int(os.getenv("NAVIDROME_TAG_UNRESOLVED", 0)),
-            "needs_info": int(os.getenv("NAVIDROME_TAG_NEEDS_INFO", 0)),
-            "fixed":      int(os.getenv("NAVIDROME_TAG_FIXED", 0)),
-            "wont_fix":   int(os.getenv("NAVIDROME_TAG_WONT_FIX", 0)),
-            "other":      int(os.getenv("NAVIDROME_TAG_OTHER", 0)),
-            "ui":         int(os.getenv("NAVIDROME_TAG_UI", 0)),
-            "sync":       int(os.getenv("NAVIDROME_TAG_SYNC", 0)),
-            "performance": int(os.getenv("NAVIDROME_TAG_PERFORMANCE", 0)),
-            "auth":       int(os.getenv("NAVIDROME_TAG_AUTH", 0)),
-        },
     },
     "Plex": {
         "forum_id":      int(os.getenv("FORUM_PLEX_ID", 0)),
         "color":         discord.Color.from_str("#E5A00D"),
-        "tags": {
-            "unresolved": int(os.getenv("PLEX_TAG_UNRESOLVED", 0)),
-            "needs_info": int(os.getenv("PLEX_TAG_NEEDS_INFO", 0)),
-            "fixed":      int(os.getenv("PLEX_TAG_FIXED", 0)),
-            "wont_fix":   int(os.getenv("PLEX_TAG_WONT_FIX", 0)),
-            "other":      int(os.getenv("PLEX_TAG_OTHER", 0)),
-            "ui":         int(os.getenv("PLEX_TAG_UI", 0)),
-            "sync":       int(os.getenv("PLEX_TAG_SYNC", 0)),
-            "performance": int(os.getenv("PLEX_TAG_PERFORMANCE", 0)),
-            "auth":       int(os.getenv("PLEX_TAG_AUTH", 0)),
-        },
     },
     "Jellyfin": {
         "forum_id":      int(os.getenv("FORUM_JELLYFIN_ID", 0)),
         "color":         discord.Color.from_str("#00A4DC"),
-        "tags": {
-            "unresolved": int(os.getenv("JELLYFIN_TAG_UNRESOLVED", 0)),
-            "needs_info": int(os.getenv("JELLYFIN_TAG_NEEDS_INFO", 0)),
-            "fixed":      int(os.getenv("JELLYFIN_TAG_FIXED", 0)),
-            "wont_fix":   int(os.getenv("JELLYFIN_TAG_WONT_FIX", 0)),
-            "other":      int(os.getenv("JELLYFIN_TAG_OTHER", 0)),
-            "ui":         int(os.getenv("JELLYFIN_TAG_UI", 0)),
-            "sync":       int(os.getenv("JELLYFIN_TAG_SYNC", 0)),
-            "performance": int(os.getenv("JELLYFIN_TAG_PERFORMANCE", 0)),
-            "auth":       int(os.getenv("JELLYFIN_TAG_AUTH", 0)),
-        },
     },
     "Emby": {
         "forum_id":      int(os.getenv("FORUM_EMBY_ID", 0)),
         "color":         discord.Color.from_str("#52B54B"),
-        "tags": {
-            "unresolved": int(os.getenv("EMBY_TAG_UNRESOLVED", 0)),
-            "needs_info": int(os.getenv("EMBY_TAG_NEEDS_INFO", 0)),
-            "fixed":      int(os.getenv("EMBY_TAG_FIXED", 0)),
-            "wont_fix":   int(os.getenv("EMBY_TAG_WONT_FIX", 0)),
-            "other":      int(os.getenv("EMBY_TAG_OTHER", 0)),
-            "ui":         int(os.getenv("EMBY_TAG_UI", 0)),
-            "sync":       int(os.getenv("EMBY_TAG_SYNC", 0)),
-            "performance": int(os.getenv("EMBY_TAG_PERFORMANCE", 0)),
-            "auth":       int(os.getenv("EMBY_TAG_AUTH", 0)),
-        },
     },
 }
 
@@ -94,14 +66,6 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 # ── Helpers ───────────────────────────────────────────────────────────────────
 STATUS_KEYS = {"unresolved", "needs_info", "fixed", "wont_fix"}
 PINNED_THREAD_PREFIX = "📌 How to Submit a "
-
-CATEGORY_CHOICES = {
-    "other": "Other",
-    "ui": "UI",
-    "sync": "Sync / Library",
-    "performance": "Performance",
-    "auth": "Auth",
-}
 
 OP_MESSAGES = {
     "fixed":      "Your bug report has been marked as **Fixed**. 🎉 Thanks for the report!",
@@ -141,11 +105,20 @@ def get_app_cfg_for_thread(thread: discord.Thread) -> dict | None:
         return None
     return APPS.get(app_name)
 
-def get_status_tag_ids_for_thread(thread: discord.Thread) -> set[int]:
-    cfg = get_app_cfg_for_thread(thread)
-    if not cfg:
-        return set()
-    return {cfg["tags"][k] for k in STATUS_KEYS if cfg["tags"].get(k)}
+def normalize_tag_name(value: str) -> str:
+    return value.casefold().strip()
+
+def find_tag_by_name(forum: discord.ForumChannel, name: str) -> discord.ForumTag | None:
+    target = normalize_tag_name(name)
+    return discord.utils.find(lambda t: normalize_tag_name(t.name) == target, forum.available_tags)
+
+def get_status_tag_ids_for_forum(forum: discord.ForumChannel) -> set[int]:
+    ids = set()
+    for tag_name in STATUS_TAG_NAMES.values():
+        tag = find_tag_by_name(forum, tag_name)
+        if tag:
+            ids.add(tag.id)
+    return ids
 
 def build_status_embed(label: str, status_key: str, actor: discord.Member, op: discord.Member | None) -> discord.Embed:
     embed = discord.Embed(
@@ -216,10 +189,10 @@ class StatusPanel(discord.ui.View):
             return
 
         forum = thread.parent
-        new_tag_id = cfg["tags"].get(status_key, 0)
-        new_tag_obj = discord.utils.get(forum.available_tags, id=new_tag_id) if new_tag_id else None
+        tag_name = STATUS_TAG_NAMES.get(status_key, status_key.title())
+        new_tag_obj = find_tag_by_name(forum, tag_name)
 
-        status_tag_ids = get_status_tag_ids_for_thread(thread)
+        status_tag_ids = get_status_tag_ids_for_forum(forum)
         kept_tags = [t for t in thread.applied_tags if t.id not in status_tag_ids]
         new_tags = kept_tags + ([new_tag_obj] if new_tag_obj else [])
         await thread.edit(applied_tags=new_tags)
@@ -264,11 +237,11 @@ class StatusPanel(discord.ui.View):
 
 # ── Bug report modal ──────────────────────────────────────────────────────────
 class BugReportModal(discord.ui.Modal):
-    def __init__(self, app_name: str, forum_channel_id: int, platform_hint: str, category_tag_id: int):
+    def __init__(self, app_name: str, forum_channel_id: int, platform_hint: str, category_tag_key: str | None):
         super().__init__(title=f"Report a {app_name} Bug")
         self.app_name         = app_name
         self.forum_channel_id = forum_channel_id
-        self.category_tag_id  = category_tag_id
+        self.category_tag_key = category_tag_key
 
         self.summary = discord.ui.TextInput(
             label="Summary",
@@ -332,9 +305,9 @@ class BugReportModal(discord.ui.Modal):
             report_embed.add_field(name="📄 Debug Logs", value=f"```\n{self.debug_logs.value[:900]}\n```", inline=False)
         report_embed.set_footer(text=f"Submitted via /bugreport · {self.app_name} · Reporter ID: {interaction.user.id}")
 
-        unresolved_tag_id = cfg["tags"].get("unresolved", 0)
-        unresolved_tag = discord.utils.get(forum.available_tags, id=unresolved_tag_id) if unresolved_tag_id else None
-        category_tag = discord.utils.get(forum.available_tags, id=self.category_tag_id) if self.category_tag_id else None
+        unresolved_tag = find_tag_by_name(forum, STATUS_TAG_NAMES["unresolved"])
+        category_tag_name = CATEGORY_TAG_NAMES.get(self.category_tag_key) if self.category_tag_key else None
+        category_tag = find_tag_by_name(forum, category_tag_name) if category_tag_name else None
 
         initial_tags = [t for t in (unresolved_tag, category_tag) if t]
 
@@ -373,13 +346,8 @@ async def on_thread_create(thread: discord.Thread):
     if thread.owner_id == bot.user.id:
         return  # already handled by /bugreport submission
 
-    cfg = get_app_cfg_for_thread(thread)
-    if not cfg:
-        return
-
     forum = thread.parent
-    unresolved_tag_id = cfg["tags"].get("unresolved", 0)
-    unresolved_tag = discord.utils.get(forum.available_tags, id=unresolved_tag_id) if unresolved_tag_id else None
+    unresolved_tag = find_tag_by_name(forum, STATUS_TAG_NAMES["unresolved"])
     if unresolved_tag:
         current_tags = list(thread.applied_tags)
         if unresolved_tag not in current_tags:
@@ -446,13 +414,12 @@ async def bugreport(interaction: discord.Interaction, category: app_commands.Cho
 
         cfg = APPS[app_name]
         category_key = category.value if category else None
-        category_tag_id = cfg["tags"].get(category_key, 0) if category_key else 0
         await interaction.response.send_modal(
             BugReportModal(
                 app_name=app_name,
                 forum_channel_id=cfg["forum_id"],
                 platform_hint=PLATFORM_HINT,
-                category_tag_id=category_tag_id,
+                category_tag_key=category_key,
             )
         )
     except Exception as e:
@@ -564,13 +531,13 @@ async def listtags(ctx: commands.Context):
 async def bugstatus(ctx: commands.Context):
     forum_lines = "\n".join(f"  **{k}:** `{v['forum_id']}`" for k, v in APPS.items())
     tag_lines = "\n".join([
-        f"  {app}: unresolved={cfg['tags'].get('unresolved', 0)} needs_info={cfg['tags'].get('needs_info', 0)} fixed={cfg['tags'].get('fixed', 0)} wont_fix={cfg['tags'].get('wont_fix', 0)} other={cfg['tags'].get('other', 0)} ui={cfg['tags'].get('ui', 0)} sync={cfg['tags'].get('sync', 0)} performance={cfg['tags'].get('performance', 0)} auth={cfg['tags'].get('auth', 0)}"
-        for app, cfg in APPS.items()
+        f"  {app}: status={', '.join(STATUS_TAG_NAMES.values())} categories={', '.join(CATEGORY_TAG_NAMES.values())}"
+        for app in APPS.keys()
     ])
     await ctx.send(
         f"**Forum channels:**\n{forum_lines}\n\n"
         f"**Mod role:** <@&{MOD_ROLE_ID}>\n\n"
-        f"**Status tags (per app):**\n{tag_lines}"
+        f"**Status tags (by name):**\n{tag_lines}"
     )
 
 
