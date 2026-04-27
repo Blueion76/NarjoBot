@@ -31,6 +31,8 @@ CATEGORY_TAG_NAMES = {
 }
 
 # ── Feature request tag names ─────────────────────────────────────────────────
+# Status tag names are resolved by name at runtime via find_tag_by_name,
+# consistent with how bug report tags are resolved.
 REQUEST_STATUS_TAG_NAMES = {
     "open":        os.getenv("TAG_NAME_REQ_OPEN", "Open"),
     "planned":     os.getenv("TAG_NAME_REQ_PLANNED", "Planned"),
@@ -67,9 +69,8 @@ FEATURE_REQUEST_FORUM_ID = int(os.getenv("FORUM_FEATURE_REQUEST_ID", 0))
 FEATURE_REQUEST_COLOR    = discord.Color.from_str("#5865F2")  # Discord blurple
 
 # ── Lookups ───────────────────────────────────────────────────────────────────
-FORUM_TO_APP    = {cfg["forum_id"]: name for name, cfg in APPS.items() if cfg["forum_id"]}
-ALL_FORUM_IDS   = set(FORUM_TO_APP.keys())
-ALL_WATCHED_IDS = ALL_FORUM_IDS | ({FEATURE_REQUEST_FORUM_ID} if FEATURE_REQUEST_FORUM_ID else set())
+FORUM_TO_APP  = {cfg["forum_id"]: name for name, cfg in APPS.items() if cfg["forum_id"]}
+ALL_FORUM_IDS = set(FORUM_TO_APP.keys())
 
 # ── Bot setup ─────────────────────────────────────────────────────────────────
 intents = discord.Intents.default()
@@ -129,8 +130,6 @@ async def get_reporter(thread: discord.Thread) -> discord.Member | None:
 # ═══════════════════════════════════════════════════════════════════════════════
 # BUG REPORT SYSTEM
 # ═══════════════════════════════════════════════════════════════════════════════
-
-BUG_STATUS_KEYS    = {"unresolved", "needs_info", "fixed", "wont_fix"}
 
 BUG_OP_MESSAGES = {
     "fixed":      "Your bug report has been marked as **Fixed**. 🎉 Thanks for the report!",
@@ -328,10 +327,10 @@ class BugReportModal(discord.ui.Modal):
             )
         report_embed.set_footer(text=f"Submitted via /bugreport · {self.app_name} · Reporter ID: {interaction.user.id}")
 
-        unresolved_tag  = find_tag_by_name(forum, STATUS_TAG_NAMES["unresolved"])
+        unresolved_tag    = find_tag_by_name(forum, STATUS_TAG_NAMES["unresolved"])
         category_tag_name = CATEGORY_TAG_NAMES.get(self.category_tag_key) if self.category_tag_key else None
-        category_tag    = find_tag_by_name(forum, category_tag_name) if category_tag_name else None
-        initial_tags    = [t for t in (unresolved_tag, category_tag) if t]
+        category_tag      = find_tag_by_name(forum, category_tag_name) if category_tag_name else None
+        initial_tags      = [t for t in (unresolved_tag, category_tag) if t]
 
         thread, _ = await forum.create_thread(
             name=self.summary.value,
@@ -399,8 +398,8 @@ def build_req_status_embed(
         description=f"Status updated to **{label}** by {actor.mention}",
         color=req_status_color(status_key),
     )
-    embed.add_field(name="Status",        value=f"{req_status_emoji(status_key)} {label}", inline=True)
-    embed.add_field(name="Requested by",  value=op.mention if op else "Unknown",            inline=True)
+    embed.add_field(name="Status",       value=f"{req_status_emoji(status_key)} {label}", inline=True)
+    embed.add_field(name="Requested by", value=op.mention if op else "Unknown",            inline=True)
     embed.set_footer(text="Mods: Planned / In Progress / Completed / Declined  ·  Anyone: Reopen")
     return embed
 
@@ -410,8 +409,8 @@ def build_initial_req_status_embed(op: discord.Member | None) -> discord.Embed:
         description="Moderators can use the buttons below to update the status of this request.",
         color=discord.Color.light_grey(),
     )
-    embed.add_field(name="Status",       value="📬 Open",                          inline=True)
-    embed.add_field(name="Requested by", value=op.mention if op else "Unknown",    inline=True)
+    embed.add_field(name="Status",       value="📬 Open",                         inline=True)
+    embed.add_field(name="Requested by", value=op.mention if op else "Unknown",   inline=True)
     embed.set_footer(text="Mods: Planned / In Progress / Completed / Declined  ·  Anyone: Reopen")
     return embed
 
@@ -545,18 +544,19 @@ class FeatureRequestModal(discord.ui.Modal, title="Submit a Feature Request"):
             title=f"💡 {self.summary.value}",
             color=FEATURE_REQUEST_COLOR,
         )
-        report_embed.add_field(name="🔍 Problem / Use Case",  value=self.problem.value,  inline=False)
-        report_embed.add_field(name="✨ Proposed Feature",     value=self.proposed.value, inline=False)
-        report_embed.add_field(name="🎯 Why Would This Help", value=self.benefit.value,  inline=False)
-        report_embed.add_field(name="👤 Requested by",        value=interaction.user.mention, inline=True)
+        report_embed.add_field(name="🔍 Problem / Use Case",  value=self.problem.value,       inline=False)
+        report_embed.add_field(name="✨ Proposed Feature",     value=self.proposed.value,      inline=False)
+        report_embed.add_field(name="🎯 Why Would This Help", value=self.benefit.value,        inline=False)
+        report_embed.add_field(name="👤 Requested by",        value=interaction.user.mention,  inline=True)
         if self.extra.value:
             report_embed.add_field(name="📎 Extra Context", value=self.extra.value, inline=False)
         report_embed.set_footer(text=f"Submitted via /request · Reporter ID: {interaction.user.id}")
 
-        open_tag      = find_tag_by_name(forum, REQUEST_STATUS_TAG_NAMES["open"])
-        cat_tag_name  = REQUEST_CATEGORY_TAG_NAMES.get(self.category_tag_key) if self.category_tag_key else None
-        category_tag  = find_tag_by_name(forum, cat_tag_name) if cat_tag_name else None
-        initial_tags  = [t for t in (open_tag, category_tag) if t]
+        # Resolve tags by name at runtime — same pattern as bug report tag resolution
+        open_tag     = find_tag_by_name(forum, REQUEST_STATUS_TAG_NAMES["open"])
+        cat_tag_name = REQUEST_CATEGORY_TAG_NAMES.get(self.category_tag_key) if self.category_tag_key else None
+        category_tag = find_tag_by_name(forum, cat_tag_name) if cat_tag_name else None
+        initial_tags = [t for t in (open_tag, category_tag) if t]
 
         thread, _ = await forum.create_thread(
             name=self.summary.value,
@@ -595,36 +595,24 @@ async def on_ready():
 
 @bot.event
 async def on_thread_create(thread: discord.Thread):
-    """Auto-tag and post the status panel for manually-created threads."""
+    """Auto-tag and post the status panel for manually-created threads in bug report forums."""
     if thread.owner_id == bot.user.id:
         return  # already handled by modal submission
 
-    # Bug report forums
-    if thread.parent_id in ALL_FORUM_IDS:
-        forum = thread.parent
-        unresolved_tag = find_tag_by_name(forum, STATUS_TAG_NAMES["unresolved"])
-        if unresolved_tag:
-            current_tags = list(thread.applied_tags)
-            if unresolved_tag not in current_tags:
-                await thread.edit(applied_tags=current_tags + [unresolved_tag])
-        await thread.send(
-            embed=build_initial_bug_status_embed(thread.owner),
-            view=StatusPanel(),
-        )
-        return
+    if thread.parent_id not in ALL_FORUM_IDS:
+        return  # not a watched bug report forum — feature request threads are bot-only
 
-    # Feature request forum
-    if FEATURE_REQUEST_FORUM_ID and thread.parent_id == FEATURE_REQUEST_FORUM_ID:
-        forum    = thread.parent
-        open_tag = find_tag_by_name(forum, REQUEST_STATUS_TAG_NAMES["open"])
-        if open_tag:
-            current_tags = list(thread.applied_tags)
-            if open_tag not in current_tags:
-                await thread.edit(applied_tags=current_tags + [open_tag])
-        await thread.send(
-            embed=build_initial_req_status_embed(thread.owner),
-            view=FeatureRequestStatusPanel(),
-        )
+    forum = thread.parent
+    unresolved_tag = find_tag_by_name(forum, STATUS_TAG_NAMES["unresolved"])
+    if unresolved_tag:
+        current_tags = list(thread.applied_tags)
+        if unresolved_tag not in current_tags:
+            await thread.edit(applied_tags=current_tags + [unresolved_tag])
+
+    await thread.send(
+        embed=build_initial_bug_status_embed(thread.owner),
+        view=StatusPanel(),
+    )
 
 @bot.event
 async def on_message(message: discord.Message):
@@ -646,11 +634,11 @@ async def on_message(message: discord.Message):
 @bot.tree.command(name="bugreport", description="Submit a bug report for this channel's app")
 @app_commands.choices(
     category=[
-        app_commands.Choice(name="Other",          value="other"),
-        app_commands.Choice(name="UI",              value="ui"),
-        app_commands.Choice(name="Sync / Library",  value="sync"),
-        app_commands.Choice(name="Performance",     value="performance"),
-        app_commands.Choice(name="Auth",            value="auth"),
+        app_commands.Choice(name="Other",         value="other"),
+        app_commands.Choice(name="UI",            value="ui"),
+        app_commands.Choice(name="Sync / Library", value="sync"),
+        app_commands.Choice(name="Performance",   value="performance"),
+        app_commands.Choice(name="Auth",          value="auth"),
     ]
 )
 async def bugreport(interaction: discord.Interaction, category: app_commands.Choice[str] | None = None):
@@ -704,16 +692,15 @@ async def bugreport(interaction: discord.Interaction, category: app_commands.Cho
 @bot.tree.command(name="request", description="Submit a feature request in the #feature-request channel")
 @app_commands.choices(
     category=[
-        app_commands.Choice(name="Other",          value="other"),
-        app_commands.Choice(name="UI",              value="ui"),
-        app_commands.Choice(name="Sync / Library",  value="sync"),
-        app_commands.Choice(name="Performance",     value="performance"),
-        app_commands.Choice(name="Auth",            value="auth"),
+        app_commands.Choice(name="Other",         value="other"),
+        app_commands.Choice(name="UI",            value="ui"),
+        app_commands.Choice(name="Sync / Library", value="sync"),
+        app_commands.Choice(name="Performance",   value="performance"),
+        app_commands.Choice(name="Auth",          value="auth"),
     ]
 )
 async def request(interaction: discord.Interaction, category: app_commands.Choice[str] | None = None):
     try:
-        # Resolve the channel/thread we're in
         lookup_id = interaction.channel_id
         channel   = interaction.channel
         parent_id = getattr(channel, "parent_id", None)
@@ -721,7 +708,6 @@ async def request(interaction: discord.Interaction, category: app_commands.Choic
             lookup_id = parent_id
 
         if lookup_id != FEATURE_REQUEST_FORUM_ID:
-            # Try fetching in case we got a thread inside a different channel
             if not parent_id:
                 try:
                     fetched   = await interaction.guild.fetch_channel(interaction.channel_id)
@@ -739,8 +725,7 @@ async def request(interaction: discord.Interaction, category: app_commands.Choic
             return
 
         category_key = category.value if category else None
-        modal        = FeatureRequestModal(category_tag_key=category_key)
-        await interaction.response.send_modal(modal)
+        await interaction.response.send_modal(FeatureRequestModal(category_tag_key=category_key))
 
     except Exception as e:
         import traceback
@@ -924,8 +909,8 @@ async def listtags(ctx: commands.Context):
 @bot.command(name="bugstatus")
 @commands.has_permissions(manage_channels=True)
 async def bugstatus(ctx: commands.Context):
-    forum_lines = "\n".join(f"  **{k}:** `{v['forum_id']}`" for k, v in APPS.items())
-    tag_lines   = "\n".join([
+    forum_lines   = "\n".join(f"  **{k}:** `{v['forum_id']}`" for k, v in APPS.items())
+    tag_lines     = "\n".join([
         f"  {app}: status={', '.join(STATUS_TAG_NAMES.values())} categories={', '.join(CATEGORY_TAG_NAMES.values())}"
         for app in APPS.keys()
     ])
