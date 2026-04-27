@@ -2,6 +2,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 import os
+import re
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -10,26 +11,25 @@ load_dotenv()
 TOKEN       = os.getenv("DISCORD_TOKEN")
 MOD_ROLE_ID = int(os.getenv("MOD_ROLE_ID", 0))
 
+# Universal platform hint for all apps
+PLATFORM_HINT = os.getenv("PLATFORM_HINT", "Narjo 1.3(70) - iOS 26.4")
+
 # Per-app forum channel IDs
 APPS = {
     "Navidrome": {
         "forum_id":      int(os.getenv("FORUM_NAVIDROME_ID", 0)),
-        "platform_hint": "Narjo 1.3(70) - iOS 26.4",
         "color":         discord.Color.from_str("#FF8200"),
     },
     "Plex": {
         "forum_id":      int(os.getenv("FORUM_PLEX_ID", 0)),
-        "platform_hint": "Narjo 1.3(70) - iOS 26.4",
         "color":         discord.Color.from_str("#E5A00D"),
     },
     "Jellyfin": {
         "forum_id":      int(os.getenv("FORUM_JELLYFIN_ID", 0)),
-        "platform_hint": "Narjo 1.3(70) - iOS 26.4",
         "color":         discord.Color.from_str("#00A4DC"),
     },
     "Emby": {
         "forum_id":      int(os.getenv("FORUM_EMBY_ID", 0)),
-        "platform_hint": "Narjo 1.3(70) - iOS 26.4",
         "color":         discord.Color.from_str("#52B54B"),
     },
 }
@@ -101,6 +101,32 @@ def build_initial_status_embed(op: discord.Member | None) -> discord.Embed:
     embed.set_footer(text="Mods: Fixed / Needs Info / Won't Fix  ·  Anyone: Reopen")
     return embed
 
+async def get_reporter(thread: discord.Thread) -> discord.Member | None:
+    # If it's a manual thread, owner is likely the OP
+    if thread.owner and thread.owner.id != bot.user.id:
+        return thread.owner
+
+    # For bot-created threads, parse the starter embed footer
+    try:
+        starter = thread.starter_message or await thread.fetch_message(thread.id)
+    except Exception:
+        return None
+
+    if starter and starter.embeds:
+        embed = starter.embeds[0]
+        if embed.footer and embed.footer.text:
+            m = re.search(r"Reporter ID:\s*(\d+)", embed.footer.text)
+            if m:
+                uid = int(m.group(1))
+                member = thread.guild.get_member(uid)
+                if member:
+                    return member
+                try:
+                    return await thread.guild.fetch_member(uid)
+                except Exception:
+                    return None
+    return None
+
 # ── Status panel view (persistent across restarts) ────────────────────────────
 class StatusPanel(discord.ui.View):
     def __init__(self):
@@ -122,12 +148,13 @@ class StatusPanel(discord.ui.View):
         new_tags    = kept_tags + ([new_tag_obj] if new_tag_obj else [])
         await thread.edit(applied_tags=new_tags)
 
-        embed = build_status_embed(label, new_tag_id, interaction.user, thread.owner)
+        op = await get_reporter(thread)
+        embed = build_status_embed(label, new_tag_id, interaction.user, op)
         await interaction.response.edit_message(embed=embed, view=self)
 
         op_msg = OP_MESSAGES.get(new_tag_id, f"Your report status changed to **{label}**.")
-        if thread.owner:
-            await thread.send(f"{thread.owner.mention} — {op_msg}")
+        if op:
+            await thread.send(f"{op.mention} — {op_msg}")
 
     async def _mod_set_status(self, interaction: discord.Interaction, new_tag_id: int, label: str):
         if not self._is_mod(interaction):
@@ -219,7 +246,7 @@ class BugReportModal(discord.ui.Modal):
         report_embed.add_field(name="👤 Reported by",         value=interaction.user.mention,      inline=True)
         if self.debug_logs.value:
             report_embed.add_field(name="📄 Debug Logs", value=f"```\n{self.debug_logs.value[:900]}\n```", inline=False)
-        report_embed.set_footer(text=f"Submitted via /bugreport · {self.app_name}")
+        report_embed.set_footer(text=f"Submitted via /bugreport · {self.app_name} · Reporter ID: {interaction.user.id}")
 
         unresolved_tag = discord.utils.get(forum.available_tags, id=TAG_UNRESOLVED)
         initial_tags   = [unresolved_tag] if unresolved_tag else []
@@ -306,7 +333,7 @@ async def bugreport(interaction: discord.Interaction):
             BugReportModal(
                 app_name=app_name,
                 forum_channel_id=cfg["forum_id"],
-                platform_hint=cfg["platform_hint"],
+                platform_hint=PLATFORM_HINT,
             )
         )
     except Exception as e:
@@ -366,7 +393,7 @@ async def pinbugreport(ctx: commands.Context):
         value=(
             "• **Steps to reproduce** — exactly what you did\n"
             "• **Expected vs actual behavior** — what should happen vs what did\n"
-            f"• **Version & platform** — e.g. `{cfg['platform_hint']}`\n"
+            f"• **Version & platform** — e.g. `{PLATFORM_HINT}`\n"
             "• **Debug logs** (optional) — Settings → More → Diagnostics"
         ),
         inline=False,
