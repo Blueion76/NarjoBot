@@ -288,19 +288,10 @@ class BugReportModal(discord.ui.Modal):
             max_length=100,
             required=True,
         )
-        self.debug_logs = discord.ui.TextInput(
-            label="Logs (optional)",
-            style=discord.TextStyle.paragraph,
-            placeholder="Paste logs here. Find them at Settings → More → Diagnostics",
-            max_length=1000,
-            required=False,
-        )
-
         self.add_item(self.summary)
         self.add_item(self.steps)
         self.add_item(self.expected_vs_actual)
         self.add_item(self.version_platform)
-        self.add_item(self.debug_logs)
 
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
@@ -317,12 +308,6 @@ class BugReportModal(discord.ui.Modal):
         report_embed.add_field(name="🔄 Expected vs Actual",  value=self.expected_vs_actual.value, inline=False)
         report_embed.add_field(name="📱 Version & Platform",  value=self.version_platform.value,   inline=True)
         report_embed.add_field(name="👤 Reported by",         value=interaction.user.mention,      inline=True)
-        if self.debug_logs.value:
-            report_embed.add_field(
-                name="📄 Debug Logs",
-                value=f"```\n{self.debug_logs.value[:900]}\n```",
-                inline=False,
-            )
         report_embed.set_footer(text=f"Submitted via /bugreport · {self.app_name} · Reporter ID: {interaction.user.id}")
 
         unresolved_tag    = find_tag_by_name(forum, STATUS_TAG_NAMES["unresolved"])
@@ -340,6 +325,8 @@ class BugReportModal(discord.ui.Modal):
 
         await interaction.followup.send(
             f"✅ Report submitted! → {thread.mention}\n"
+            "📎 **Have a log file?** Open the thread above and attach it as a file — "
+            "find logs at **Settings → More → Diagnostics**.\n"
             "You'll be pinged in that thread if a maintainer needs more info.",
             ephemeral=True,
         )
@@ -781,7 +768,8 @@ async def pinbugreport(ctx: commands.Context):
             "• **Steps to reproduce** — exactly what you did\n"
             "• **Expected vs actual behavior** — what should happen vs what did\n"
             f"• **Version & platform** — e.g. `{PLATFORM_HINT}`\n"
-            "• **Debug logs** (optional) — Settings → More → Diagnostics"
+            "• **Debug logs** (optional) — after submitting, upload the file directly to your thread\n"
+            "  (find logs at Settings → More → Diagnostics)"
         ),
         inline=False,
     )
