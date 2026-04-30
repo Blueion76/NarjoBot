@@ -1,19 +1,22 @@
 # NarjoBot
 
-A Discord bot for the **Narjo Music** server that provides structured bug reporting and feature requesting via slash commands inside Discord forum channels. Reports are submitted through guided modals, auto-organized with tags, and tracked with persistent status panels that moderators can update with a single click.
+A Discord bot for the **Narjo Music** server that provides structured bug reporting and feature requesting via slash commands inside Discord forum channels. Reports are submitted through guided modals, auto-organized with tags, and tracked with persistent status panels that moderators can update with a single click. An optional Gemini AI integration posts advisory comments on every submitted report.
 
 ---
 
 ## Features
 
-- `/bugreport` — Submit a structured bug report in any configured app forum channel
-- `/request` — Submit a feature request in the dedicated `#feature-request` forum channel
+- `/bugreport <platform> [category]` — Submit a structured bug report; music platform chosen from a native Discord dropdown
+- `/request [category]` — Submit a feature request in the dedicated `#feature-requests` forum channel
+- `/submit-log <file>` — Upload a Narjo `.txt` debug log into an existing bug report thread for automatic parsing and AI analysis
+- Gemini-powered AI advisory comments posted on every bug report and feature request
+- Deterministic log parsing (severity, error lines, key metrics, anomaly detection)
 - Persistent status panels with one-click mod controls on every thread
-- Auto-tagging threads with status and category tags on creation
+- Auto-tagging threads with status, platform, and category tags on creation
 - Pinned how-to posts via `!pinbugreport` and `!pinfeaturerequest`
 - Reporter ping notifications when status changes
 - Automatic thread archiving/locking on resolution
-- Manually-created threads in bug forums are auto-tagged and receive a status panel
+- Manually-created threads in the bug forum are auto-tagged and receive a status panel
 
 ---
 
@@ -23,8 +26,10 @@ A Discord bot for the **Narjo Music** server that provides structured bug report
 - A Discord bot token with the following intents enabled:
   - **Server Members Intent**
   - **Message Content Intent**
-- Discord forum channels set up for each app and for feature requests
+- A single Discord forum channel for all bug reports
+- A separate Discord forum channel for feature requests
 - Forum tags created in Discord matching the names in your `.env`
+- A Google AI Studio API key (for Gemini AI comments — optional but recommended)
 
 ---
 
@@ -61,13 +66,13 @@ To copy channel and role IDs in Discord:
 
 ### 3. Create Forum Channels
 
-Create one **Forum** channel per app you want to track bugs for (e.g. `#navidrome-bugs`, `#plex-bugs`), plus one shared **Forum** channel for feature requests (e.g. `#feature-requests`).
+Create one **Forum** channel for all bug reports (e.g. `#bug-reports`) and one for feature requests (e.g. `#feature-requests`). The bot now handles all platforms (Navidrome, Jellyfin, Emby, Plex) inside the single bug report forum — the platform is selected by the user as part of the `/bugreport` command.
 
 ### 4. Add Forum Tags
 
-Tags must be created inside each forum channel in Discord **before** running the bot. The bot looks up tags by name — if a tag is missing or misspelled, it will be silently skipped.
+Tags must be created inside each forum channel in Discord **before** running the bot. The bot looks up tags by name — if a tag is missing or misspelled it will be silently skipped.
 
-#### Bug report forum tags (add to each app's forum channel)
+#### Bug report forum tags
 
 **Status tags** (required for status panel to work):
 
@@ -78,7 +83,16 @@ Tags must be created inside each forum channel in Discord **before** running the
 | `Fixed` | Resolved |
 | `Won't Fix` | Out of scope / can't reproduce |
 
-**Category tags** (optional, used by `/bugreport` category selector):
+**Platform tags** (applied automatically based on the platform chosen at submission):
+
+| Tag Name | Platform |
+|----------|---------|
+| `Navidrome` | Navidrome / OpenSubsonic |
+| `Jellyfin` | Jellyfin |
+| `Emby` | Emby |
+| `Plex` | Plex |
+
+**Category tags** (optional, used by the `/bugreport` category selector):
 
 | Tag Name | Purpose |
 |----------|---------|
@@ -88,7 +102,7 @@ Tags must be created inside each forum channel in Discord **before** running the
 | `Performance` | Slowdowns, high resource usage |
 | `Auth` | Login, permissions, token issues |
 
-#### Feature request forum tags (add to the `#feature-requests` forum)
+#### Feature request forum tags
 
 **Status tags:**
 
@@ -104,7 +118,7 @@ Tags must be created inside each forum channel in Discord **before** running the
 
 `Other`, `UI`, `Sync / Library`, `Performance`, `Auth`
 
-> **Tip:** Tag names are case-insensitive in the bot's matching logic, but it's best practice to match the casing in `env.example` exactly to avoid confusion.
+> **Tip:** Tag names are case-insensitive in the bot's matching logic, but matching the casing in `env.example` exactly avoids confusion.
 
 ---
 
@@ -162,16 +176,14 @@ Copy `env.example` to `.env` and fill in each value:
 ```env
 # ── Required ───────────────────────────────────────────────────────────────────
 DISCORD_TOKEN=your-bot-token-here
-MOD_ROLE_ID=000000000000000000        # Role allowed to update report statuses
+MOD_ROLE_ID=000000000000000000           # Role allowed to update report statuses
+GOOGLE_AI_STUDIO_API_KEY=your-key-here  # Get one free at aistudio.google.com
 
 # ── Optional ───────────────────────────────────────────────────────────────────
-PLATFORM_HINT="Narjo 1.3(70) - iOS 26.4"   # Placeholder text in the bug report version field
+PLATFORM_HINT="Narjo 1.3(70) — iOS 18.4"  # Placeholder in the version field
 
-# ── Bug report forum channel IDs (one per app) ────────────────────────────────
-FORUM_NAVIDROME_ID=000000000000000000
-FORUM_PLEX_ID=000000000000000000
-FORUM_JELLYFIN_ID=000000000000000000
-FORUM_EMBY_ID=000000000000000000
+# ── Bug report forum channel ID (single unified forum) ────────────────────────
+FORUM_BUG_REPORT_ID=000000000000000000
 
 # ── Feature request forum channel ID ──────────────────────────────────────────
 FORUM_FEATURE_REQUEST_ID=000000000000000000
@@ -181,6 +193,12 @@ TAG_NAME_UNRESOLVED=Unresolved
 TAG_NAME_NEEDS_INFO=Needs Info
 TAG_NAME_FIXED=Fixed
 TAG_NAME_WONT_FIX=Won't Fix
+
+# ── Platform tag names (applied based on platform chosen at submission) ────────
+TAG_NAME_NAVIDROME=Navidrome
+TAG_NAME_JELLYFIN=Jellyfin
+TAG_NAME_EMBY=Emby
+TAG_NAME_PLEX=Plex
 
 # ── Shared category tag names ─────────────────────────────────────────────────
 TAG_NAME_OTHER=Other
@@ -202,8 +220,10 @@ TAG_NAME_REQ_DECLINED=Declined
 | Value | How to get it |
 |-------|---------------|
 | `DISCORD_TOKEN` | Discord Developer Portal → your app → Bot → Reset Token |
+| `GOOGLE_AI_STUDIO_API_KEY` | [aistudio.google.com](https://aistudio.google.com) → Get API key |
 | `MOD_ROLE_ID` | Discord → right-click the moderator role → Copy Role ID |
-| `FORUM_*_ID` | Discord → right-click the forum channel → Copy Channel ID |
+| `FORUM_BUG_REPORT_ID` | Discord → right-click the bug report forum channel → Copy Channel ID |
+| `FORUM_FEATURE_REQUEST_ID` | Discord → right-click the feature request forum channel → Copy Channel ID |
 
 > **Never commit your `.env` file.** It is already in `.gitignore`.
 
@@ -215,10 +235,11 @@ TAG_NAME_REQ_DECLINED=Declined
 
 | Command | Where to use | Who can use | Description |
 |---------|-------------|-------------|-------------|
-| `/bugreport [category]` | Inside a configured bug-report forum | Anyone | Opens a modal to submit a structured bug report |
+| `/bugreport <platform> [category]` | Inside `#bug-reports` | Anyone | Opens a modal to submit a structured bug report. Platform (Navidrome / OpenSubsonic, Jellyfin, Emby, Plex) is chosen from a dropdown before the modal opens. |
 | `/request [category]` | Inside `#feature-requests` | Anyone | Opens a modal to submit a feature request |
+| `/submit-log <file>` | Inside your own bug report thread | Reporter or mod | Uploads a Narjo `.txt` debug log, parses it, and posts a structured analysis embed and AI advisory comment in the thread |
 
-Both commands accept an optional `category` argument from a preset list: `Other`, `UI`, `Sync / Library`, `Performance`, `Auth`.
+Both `/bugreport` and `/request` accept an optional `category` argument: `Other`, `UI`, `Sync / Library`, `Performance`, `Auth`.
 
 ### Prefix Commands (Moderators Only)
 
@@ -226,10 +247,10 @@ These require the `Manage Channels` permission.
 
 | Command | Where to run | Description |
 |---------|-------------|-------------|
-| `!pinbugreport` | Inside a bug-report forum or thread | Creates a pinned "How to Submit" guide thread |
+| `!pinbugreport` | Inside the bug-report forum or thread | Creates a pinned "How to Submit" guide thread |
 | `!pinfeaturerequest` | Inside the feature-request forum or thread | Creates a pinned "How to Submit" guide thread |
 | `!listtags` | Anywhere | Lists all forum tags and their IDs for every configured forum |
-| `!bugstatus` | Anywhere | Prints the bot's current config: forum IDs, tag names, mod role |
+| `!bugstatus` | Anywhere | Prints the bot's current config: forum IDs, AI flags, tag names, mod role |
 
 ---
 
@@ -258,11 +279,56 @@ Every submitted report or request gets an embed with action buttons posted autom
 
 ---
 
+## AI Features
+
+When `GOOGLE_AI_STUDIO_API_KEY` is set, the bot posts advisory comments automatically using Gemini (`gemini-2.5-flash`). These are formatted as embeds with clearly labelled sections, not walls of text.
+
+### Bug report advisory (posted on every `/bugreport` submission)
+
+| Section | Content |
+|---------|---------|
+| **Cause** | Most likely root cause based on the form fields |
+| **Evidence** | What in the report supports that cause |
+| **Fix** | Code area or behavior to inspect |
+| **Instrumentation** | What extra log data would help next time |
+
+### Log analysis advisory (posted after `/submit-log`)
+
+Same four sections as above, but driven by the parsed log data rather than form text. The log is also redacted (tokens, IPs, URLs, emails stripped) and optionally re-attached to the thread.
+
+### Feature request refinement (posted on every `/request` submission)
+
+| Section | Content |
+|---------|---------|
+| **User Value** | Who benefits and how |
+| **Behavior** | Suggested behavior and acceptance criteria |
+| **Edge Cases** | Implementation notes, edge cases, or risks |
+
+AI comments are clearly labelled as advisory. If the AI is rate-limited or unavailable, a descriptive error embed is posted instead of a generic failure message.
+
+---
+
+## Log Submission (`/submit-log`)
+
+Run `/submit-log` inside your existing bug report thread and attach a Narjo `.txt` debug log (exported from **Settings → More → Diagnostics**).
+
+The bot will:
+
+1. Validate and redact the log (removes tokens, IPs, URLs, emails)
+2. Post a **Log Analysis** embed with severity, client info, playback context, key metrics, and detected anomalies
+3. Post a **High-signal log lines** snippet for the most relevant error/warning lines
+4. Re-attach a redacted copy of the log to the thread (if under 900 KB)
+5. Post a **AI Advisory (Log Analysis)** embed with cause, evidence, fix, and instrumentation suggestions
+
+Only the original reporter or a moderator can run `/submit-log` in a given thread.
+
+---
+
 ## Troubleshooting
 
 ### `/bugreport` or `/request` doesn't appear in autocomplete
 
-Slash commands are synced guild-by-guild on startup. **Restart the bot** — on startup, the bot calls `copy_global_to` + `sync(guild=guild)` for every guild it's in, which registers commands instantly. If commands still don't appear after a restart, check the bot's console output for errors during `on_ready`.
+Slash commands are synced guild-by-guild on startup. **Restart the bot** — on startup it calls `copy_global_to` + `sync(guild=guild)` for every guild it's in, which registers commands instantly. If commands still don't appear after a restart, check the bot's console output for errors during `on_ready`.
 
 ### Commands say "wrong channel" when used in the right place
 
@@ -270,7 +336,15 @@ Run `!bugstatus` to check what forum IDs the bot has loaded. If any show `0`, th
 
 ### Tags aren't being applied to threads
 
-Run `!listtags` to see what tags the bot can see in each forum. Compare against your `.env` tag name values — they must match exactly (the bot does case-insensitive comparison, but extra spaces will cause misses).
+Run `!listtags` to see what tags the bot can see in each forum. Compare against your `.env` tag name values — they must match exactly (the bot does case-insensitive comparison, but extra spaces will cause misses). Platform tags (Navidrome, Jellyfin, etc.) must be created in the bug report forum for them to be applied.
+
+### AI comments aren't appearing
+
+Check that `GOOGLE_AI_STUDIO_API_KEY` is set in your `.env` and that the `google-genai` package is installed (`pip install google-genai`). If the key is valid but the AI is unavailable, the bot will post a descriptive error embed rather than failing silently.
+
+### `/submit-log` says "You can only use this in your own thread"
+
+Only the user who originally submitted the bug report (or a moderator) can upload a log. If you submitted the report and are still seeing this, check that the thread's opening embed still has the original footer containing your Reporter ID.
 
 ### Bot goes offline after some time
 
